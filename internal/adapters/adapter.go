@@ -38,15 +38,15 @@ type UnifiedFunctionCall struct {
 
 // UnifiedTool represents a tool that the model can call.
 type UnifiedTool struct {
-	Type     string
-	Function UnifiedFunction
+	Type     string          `json:"type"`
+	Function UnifiedFunction `json:"function"`
 }
 
 // UnifiedFunction represents the definition of a function tool.
 type UnifiedFunction struct {
-	Name        string
-	Description string
-	Parameters  map[string]interface{}
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
 }
 
 // UnifiedChatResponse is a placeholder for the response. The actual implementation

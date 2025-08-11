@@ -73,6 +73,7 @@ func (a *OpenAIAdapter) ClientChatToUnified(r *http.Request) (*UnifiedChatReques
 		// ToolChoice: openaiReq.ToolChoice, // ToolChoice needs special handling
 	}
 
+
 	// Handle ToolChoice separately as it can be a string or an object
 	if tcStr, ok := openaiReq.ToolChoice.(string); ok {
 		unifiedReq.ToolChoice = tcStr
@@ -86,8 +87,14 @@ func (a *OpenAIAdapter) ClientChatToUnified(r *http.Request) (*UnifiedChatReques
 func (a *OpenAIAdapter) UnifiedChatToBackend(unifiedReq *UnifiedChatRequest, backendURL string) (*http.Request, error) {
 	openaiMessages := make([]map[string]interface{}, len(unifiedReq.Messages))
 	for i, msg := range unifiedReq.Messages {
+		// Convert tool response messages to proper OpenAI format
+		role := msg.Role
+		if msg.ToolCallID != "" {
+			role = "tool" // OpenAI requires role "tool" for tool responses
+		}
+		
 		openaiMsg := map[string]interface{}{
-			"role":    msg.Role,
+			"role":    role,
 			"content": msg.Content,
 		}
 		if msg.ToolCallID != "" {
@@ -282,6 +289,7 @@ func (a *OpenAIAdapter) UnifiedChatToClient(unifiedResp *UnifiedChatResponse, w 
 
 	respBody, err := json.Marshal(openaiResp)
 	if err != nil {
+		slog.Error("failed to marshal OpenAI response", "error", err)
 		return err
 	}
 
@@ -294,16 +302,26 @@ func (a *OpenAIAdapter) UnifiedChatToClient(unifiedResp *UnifiedChatResponse, w 
 // --- Error Translation ---
 
 func (a *OpenAIAdapter) TranslateError(backendResp *http.Response) []byte {
+	// Read the error response body
+	bodyBytes, err := io.ReadAll(backendResp.Body)
+	if err != nil {
+		slog.Error("failed to read error response body in TranslateError", "error", err)
+		return []byte(`{"error": {"message": "An error occurred at the backend.", "type": "broker_error"}}`)
+	}
+	
+
 	var openaiError struct {
 		Error struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
 			Code    string `json:"code"`
+			Param   string `json:"param,omitempty"`
 		} `json:"error"`
 	}
 
 	// Try to decode the backend error
-	if err := json.NewDecoder(backendResp.Body).Decode(&openaiError); err != nil {
+	if err := json.Unmarshal(bodyBytes, &openaiError); err != nil {
+		slog.Error("failed to decode backend error response", "error", err, "body", string(bodyBytes))
 		// If we can't decode, return a generic error
 		return []byte(`{"error": {"message": "An error occurred at the backend.", "type": "broker_error"}}`)
 	}
